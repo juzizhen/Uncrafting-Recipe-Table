@@ -53,6 +53,8 @@ public class UncraftingScreenHandler extends ScreenHandler {
         ItemStack originalStack = slot.getStack();
         ItemStack movedStack = originalStack.copy();
 
+        boolean triggerOutputChange = false;
+
         if (index >= 0 && index <= 1) {
             if (!this.insertItem(originalStack, 11, 38, false)) {
                 if (!this.insertItem(originalStack, 38, 47, false)) {
@@ -66,8 +68,7 @@ public class UncraftingScreenHandler extends ScreenHandler {
                 }
             }
             if (originalStack.getCount() < movedStack.getCount()) {
-                int transferred = movedStack.getCount() - originalStack.getCount();
-                blockEntity.consumeInputOnly(transferred, player);
+                triggerOutputChange = true;
             }
         } else {
             ItemStack stack = originalStack.copy();
@@ -90,6 +91,12 @@ public class UncraftingScreenHandler extends ScreenHandler {
         }
 
         slot.onQuickTransfer(originalStack, movedStack);
+
+        if (triggerOutputChange) {
+            blockEntity.onOutputChanged(movedStack);
+            return ItemStack.EMPTY;
+        }
+
         return movedStack;
     }
 

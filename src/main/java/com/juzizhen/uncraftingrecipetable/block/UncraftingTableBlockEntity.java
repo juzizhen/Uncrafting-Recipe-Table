@@ -4,14 +4,11 @@ import com.juzizhen.uncraftingrecipetable.UncraftingRecipeTable;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.inventory.CraftingInventory;
 import net.minecraft.inventory.Inventories;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.recipe.*;
 import net.minecraft.screen.ScreenHandler;
@@ -58,7 +55,7 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         return hasOutputItems;
     }
 
-    private void searchRecipeToOutput(ItemStack currentInput) {
+    void searchRecipeToOutput(ItemStack currentInput) {
         findMatchingRecipes(currentInput);
 
         if (!matchingRecipes.isEmpty()) {
@@ -142,6 +139,7 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             }
 
             if (noOtherOutputs && getStack(SLOT_INPUT) != ItemStack.EMPTY) {
+                clearOutputSlots();
                 searchRecipeToOutput(currentInput);
             }
         }
@@ -275,94 +273,6 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         for (int i = SLOT_OUTPUT_START; i <= SLOT_OUTPUT_END; i++) {
             setStack(i, ItemStack.EMPTY);
         }
-    }
-
-    public void consumeInputOnly(int amount, PlayerEntity player) {
-        if (world == null || world.isClient || amount <= 0) return;
-
-        ItemStack input = getStack(SLOT_INPUT);
-        if (input.isEmpty() || matchingRecipes.isEmpty()) return;
-
-        Recipe<?> recipe = matchingRecipes.get(selectedRecipeIndex);
-        int recipeOutputCount = getRecipeOutputCount();
-        int toConsume = amount * recipeOutputCount;
-
-        if (toConsume > input.getCount()) {
-            int maxAmount = input.getCount() / recipeOutputCount;
-            toConsume = maxAmount * recipeOutputCount;
-            if (toConsume == 0) return;
-        }
-
-        int numberOfRecipes = toConsume / recipeOutputCount;
-        player.addExperience(-XP_PER_RECIPE * numberOfRecipes);
-
-        ItemStack book = getStack(SLOT_BOOK);
-        if (!book.isEmpty() && book.isOf(Items.BOOK) && input.hasEnchantments()) {
-            ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK);
-            EnchantmentHelper.set(EnchantmentHelper.get(input), enchantedBook);
-            setStack(SLOT_BOOK, enchantedBook);
-        }
-
-        input.decrement(toConsume);
-        if (input.isEmpty()) {
-            setStack(SLOT_INPUT, ItemStack.EMPTY);
-        } else {
-            setStack(SLOT_INPUT, input);
-        }
-
-        returnContainerItems((CraftingRecipe) recipe, numberOfRecipes, player);
-
-        updateOutputSlots();
-        markDirty();
-    }
-
-    private void returnContainerItems(CraftingRecipe recipe, int numberOfRecipes, PlayerEntity player) {
-        CraftingInventory dummy = new CraftingInventory(new ScreenHandler(null, -1) {
-            @Override
-            public ItemStack quickMove(PlayerEntity player, int slot) {
-                return null;
-            }
-
-            @Override
-            public boolean canUse(PlayerEntity player) {
-                return true;
-            }
-        }, 3, 3);
-
-        List<Ingredient> ingredients = recipe.getIngredients();
-        for (int i = 0; i < ingredients.size() && i < 9; i++) {
-            Ingredient ing = ingredients.get(i);
-            ItemStack[] matching = ing.getMatchingStacks();
-            if (matching.length > 0) {
-                ItemStack stack = matching[0].copy();
-                stack.setCount(1);
-                dummy.setStack(i, stack);
-            }
-        }
-
-        DefaultedList<ItemStack> remaining = recipe.getRemainder(dummy);
-        for (ItemStack r : remaining) {
-            if (!r.isEmpty()) {
-                ItemStack scaled = r.copy();
-                scaled.setCount(scaled.getCount() * numberOfRecipes);
-                if (!player.getInventory().insertStack(scaled)) {
-                    player.dropItem(scaled, false);
-                }
-            }
-        }
-    }
-
-    private int getRecipeOutputCount() {
-        if (matchingRecipes.isEmpty()) return 1;
-        Recipe<?> recipe = matchingRecipes.get(selectedRecipeIndex);
-        ItemStack output = null;
-        if (world != null) {
-            output = recipe.getOutput(world.getRegistryManager());
-        }
-        if (output != null) {
-            return Math.max(1, output.getCount());
-        }
-        return 0;
     }
 
     public void cycleRecipe(int delta) {
