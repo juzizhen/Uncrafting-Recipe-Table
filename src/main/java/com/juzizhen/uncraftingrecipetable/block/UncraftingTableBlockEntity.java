@@ -68,6 +68,8 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
                 fillCraftingOutput(craftingRecipe, inputCount);
             } else if (recipe instanceof SmithingRecipe smithingRecipe) {
                 fillSmithingOutput(smithingRecipe, inputCount);
+            } else if (recipe instanceof StonecuttingRecipe stonecuttingRecipe) {
+                fillStonecuttingOutput(stonecuttingRecipe, inputCount);
             }
         }
     }
@@ -199,7 +201,34 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             fillCraftingOutput(craftingRecipe, inputCount);
         } else if (recipe instanceof SmithingRecipe smithingRecipe) {
             fillSmithingOutput(smithingRecipe, inputCount);
+        } else if (recipe instanceof StonecuttingRecipe stonecuttingRecipe) {
+            fillStonecuttingOutput(stonecuttingRecipe, inputCount);
         }
+    }
+
+    private void fillStonecuttingOutput(StonecuttingRecipe recipe, int inputCount) {
+        if (world == null) return;
+        ItemStack recipeOutput = recipe.getOutput(world.getRegistryManager());
+        int recipeOutputCount = Math.max(1, recipeOutput.getCount());
+        int multiplier = inputCount / recipeOutputCount;
+
+        if (multiplier <= 0) return;
+
+        experienceCost = XP_PER_RECIPE * multiplier;
+        int totalOutputItems = 0;
+
+        if (!recipe.getIngredients().isEmpty()) {
+            Ingredient ing = recipe.getIngredients().get(0);
+            ItemStack[] matching = ing.getMatchingStacks();
+            if (matching.length > 0) {
+                ItemStack stack = matching[0].copy();
+                stack.setCount(multiplier);
+                setStack(SLOT_OUTPUT_START, stack);
+                totalOutputItems += stack.getCount();
+            }
+        }
+
+        outputCounter = totalOutputItems;
     }
 
     private void findMatchingRecipes(ItemStack input) {
@@ -210,6 +239,11 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             }
         }
         for (SmithingRecipe recipe : serverWorld.getRecipeManager().listAllOfType(RecipeType.SMITHING)) {
+            if (ItemStack.areItemsEqual(input, recipe.getOutput(serverWorld.getRegistryManager()))) {
+                matchingRecipes.add(recipe);
+            }
+        }
+        for (StonecuttingRecipe recipe : serverWorld.getRecipeManager().listAllOfType(RecipeType.STONECUTTING)) {
             if (ItemStack.areItemsEqual(input, recipe.getOutput(serverWorld.getRegistryManager()))) {
                 matchingRecipes.add(recipe);
             }
