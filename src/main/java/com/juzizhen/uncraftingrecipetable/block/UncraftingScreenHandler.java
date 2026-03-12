@@ -44,6 +44,7 @@ public class UncraftingScreenHandler extends ScreenHandler {
             public int get() {
                 return blockEntity.experienceCost;
             }
+
             @Override
             public void set(int value) {
                 blockEntity.experienceCost = value;
@@ -86,23 +87,37 @@ public class UncraftingScreenHandler extends ScreenHandler {
                 triggerOutputChange = true;
             }
         } else {
-            ItemStack stack = originalStack.copy();
             boolean success = false;
-            if (this.insertItem(stack, 0, 1, false)) {
-                success = true;
-            } else if (this.insertItem(stack, 1, 2, false)) {
-                success = true;
+
+            if (originalStack.isOf(Items.BOOK)) {
+                Slot bookSlot = this.slots.get(0);
+                if (!bookSlot.hasStack()) {
+                    bookSlot.setStack(originalStack.split(1));
+                    bookSlot.markDirty();
+                    success = true;
+
+                }
             }
+
+            if (!success) {
+                if (this.insertItem(originalStack, 1, 2, false)) {
+                    success = true;
+                }
+            }
+
             if (!success) {
                 return ItemStack.EMPTY;
             }
-            originalStack.setCount(stack.getCount());
         }
 
         if (originalStack.isEmpty()) {
             slot.setStack(ItemStack.EMPTY);
         } else {
             slot.markDirty();
+        }
+
+        if (originalStack.getCount() == movedStack.getCount()) {
+            return ItemStack.EMPTY;
         }
 
         slot.onQuickTransfer(originalStack, movedStack);
@@ -214,19 +229,39 @@ public class UncraftingScreenHandler extends ScreenHandler {
         @Override
         public void setStack(ItemStack newStack) {
             super.setStack(newStack);
-            blockEntity.onInputChanged();
+            blockEntity.onInputChanged(false);
         }
 
         @Override
         public void onTakeItem(PlayerEntity player, ItemStack stack) {
             super.onTakeItem(player, stack);
-            blockEntity.onInputChanged();
+            blockEntity.onInputChanged(false);
         }
     }
 
     private static class BookSlot extends Slot {
-        public BookSlot(Inventory inventory, int index, int x, int y) {
-            super(inventory, index, x, y);
+        private final UncraftingTableBlockEntity blockEntity;
+
+        public BookSlot(UncraftingTableBlockEntity blockEntity, int index, int x, int y) {
+            super(blockEntity, index, x, y);
+            this.blockEntity = blockEntity;
+        }
+
+        @Override
+        public void setStack(ItemStack newStack) {
+            super.setStack(newStack);
+            blockEntity.onInputChanged(true);
+        }
+
+        @Override
+        public int getMaxItemCount() {
+            return 1;
+        }
+
+        @Override
+        public void onTakeItem(PlayerEntity player, ItemStack stack) {
+            super.onTakeItem(player, stack);
+            blockEntity.onInputChanged(true);
         }
 
         @Override

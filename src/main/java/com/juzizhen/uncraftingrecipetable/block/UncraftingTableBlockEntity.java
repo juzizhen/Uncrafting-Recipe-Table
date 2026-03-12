@@ -5,21 +5,29 @@ import com.juzizhen.uncraftingrecipetable.mixin.SmithingTransformRecipeAccessor;
 import net.fabricmc.fabric.api.screenhandler.v1.ExtendedScreenHandlerFactory;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.EnchantmentLevelEntry;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.inventory.Inventories;
 import net.minecraft.inventory.Inventory;
+import net.minecraft.item.EnchantedBookItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.item.trim.ArmorTrim;
 import net.minecraft.item.trim.ArmorTrimMaterial;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.recipe.*;
 import net.minecraft.registry.DynamicRegistryManager;
+import net.minecraft.registry.Registries;
 import net.minecraft.screen.ScreenHandler;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.collection.DefaultedList;
 import net.minecraft.util.math.BlockPos;
 
@@ -77,10 +85,18 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         }
     }
 
-    public void onInputChanged() {
+    public void onInputChanged(boolean isBookInput) {
         if (world == null || world.isClient) return;
         ItemStack currentInput = getStack(SLOT_INPUT);
         boolean hasOutputItems = hasOutputItems();
+
+        if (isBookInput) {
+            if (hasOutputItems && outputGetCount == 0) {
+                searchRecipeToOutput(currentInput);
+            }
+            markDirty();
+            return;
+        }
 
         if (!hasOutputItems) {
             clearOutputSlots();
@@ -93,7 +109,6 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             }
 
             searchRecipeToOutput(currentInput);
-
         } else {
             if (outputGetCount == 0) {
                 clearOutputSlots();
@@ -118,11 +133,31 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         if (!stack.isEmpty()) {
             if (outputGetCount == 0) {
                 outputGetCount++;
-                setStack(SLOT_INPUT, ItemStack.EMPTY);
                 if (experienceCost > 0 && !player.isCreative()) {
                     player.addExperienceLevels(-experienceCost);
                     experienceCost = 0;
                 }
+                if (currentInput.hasEnchantments() && !getStack(SLOT_BOOK).isEmpty()) {
+                    ItemStack book = getStack(SLOT_BOOK);
+                    if (book.getItem() == Items.BOOK) {
+                        ItemStack enchantedBook = new ItemStack(Items.ENCHANTED_BOOK);
+
+                        NbtList enchantments = currentInput.getEnchantments();
+                        for (int i = 0; i < enchantments.size(); i++) {
+                            NbtCompound enchantTag = enchantments.getCompound(i);
+                            String id = enchantTag.getString("id");
+                            int lvl = enchantTag.getInt("lvl");
+
+                            Enchantment enchantment = Registries.ENCHANTMENT.get(new Identifier(id));
+                            if (enchantment != null) {
+                                EnchantedBookItem.addEnchantment(enchantedBook,
+                                        new EnchantmentLevelEntry(enchantment, lvl));
+                            }
+                        }
+                        setStack(SLOT_BOOK, enchantedBook);
+                    }
+                }
+                setStack(SLOT_INPUT, ItemStack.EMPTY);
             } else if (outputGetCount < 0) {
                 outputGetCount = 0;
             } else {
@@ -196,6 +231,13 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
                 setStack(SLOT_INPUT, ItemStack.EMPTY);
             }
         }
+        ItemStack book = getStack(SLOT_BOOK);
+        if (!book.isEmpty()) {
+            if (!player.getInventory().insertStack(book)) {
+                player.dropItem(book, false);
+            }
+            setStack(SLOT_BOOK, ItemStack.EMPTY);
+        }
         initialization();
     }
 
@@ -255,7 +297,7 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         int multiplier = inputCount / recipeOutputCount;
 
         if (multiplier <= 0) return;
-        int cost = configXpCost * multiplier;
+        int cost = Math.round(configXpCost * multiplier * 0.8F - multiplier);
         ItemStack input = getStack(SLOT_INPUT);
         if (input.isDamageable()) {
             int damage = input.getDamage();
@@ -263,7 +305,12 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             float lostRatio = (float) damage / (float) maxDamage;
             cost += (int) Math.ceil(cost * lostRatio * 1.25);
         }
+        if (input.hasEnchantments() && !getStack(SLOT_BOOK).isEmpty()) {
+            int enchantCount = input.getEnchantments().size();
+            cost += enchantCount * 2;
+        }
         experienceCost = cost;
+        if (experienceCost < 1) experienceCost = 1;
 
         int totalOutputItems = 0;
 
@@ -351,7 +398,7 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         int multiplier = inputCount / recipeOutputCount;
 
         if (multiplier <= 0) return;
-        int cost = configXpCost * multiplier;
+        int cost = Math.round(configXpCost * multiplier * 1.5F);
         ItemStack input = getStack(SLOT_INPUT);
         if (input.isDamageable()) {
             int damage = input.getDamage();
@@ -359,7 +406,12 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             float lostRatio = (float) damage / (float) maxDamage;
             cost += (int) Math.ceil(cost * lostRatio * 1.25);
         }
+        if (input.hasEnchantments() && !getStack(SLOT_BOOK).isEmpty()) {
+            int enchantCount = input.getEnchantments().size();
+            cost += enchantCount * 2;
+        }
         experienceCost = cost;
+        if (experienceCost < 1) experienceCost = 1;
 
         int totalOutputItems = 0;
         Ingredient[] parts = new Ingredient[3];
@@ -394,7 +446,7 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
         int recipeOutputCount = Math.max(1, recipeOutput.getCount());
         int multiplier = inputCount / recipeOutputCount;
 
-        int cost = configXpCost * multiplier;
+        int cost = Math.round(configXpCost * multiplier * 0.2F);
         ItemStack input = getStack(SLOT_INPUT);
         if (input.isDamageable()) {
             int damage = input.getDamage();
@@ -402,7 +454,12 @@ public class UncraftingTableBlockEntity extends BlockEntity implements ExtendedS
             float lostRatio = (float) damage / (float) maxDamage;
             cost += (int) Math.ceil(cost * lostRatio * 1.25);
         }
+        if (input.hasEnchantments() && !getStack(SLOT_BOOK).isEmpty()) {
+            int enchantCount = input.getEnchantments().size();
+            cost += enchantCount * 2;
+        }
         experienceCost = cost;
+        if (experienceCost < 1) experienceCost = 1;
 
         int totalOutputItems = 0;
 
